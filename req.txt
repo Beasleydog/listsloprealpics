@@ -1,0 +1,14 @@
+moviepy
+numpy
+gradio-client
+faster-whisper
+requests
+python-dotenv
+google-genai
+opencv-python
+Pillow
+google-cloud-aiplatform
+google-auth
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2

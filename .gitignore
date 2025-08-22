@@ -1,0 +1,15 @@
+.env
+cache/*
+env/*
+geminicache/*
+images/*
+
+*.png
+*.mp4
+__pycache__/*
+
+profiles/*
+connect.sh 
+
+sshprivate.key
+sshpublic.pub
