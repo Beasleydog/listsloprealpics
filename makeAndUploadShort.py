@@ -153,7 +153,7 @@ def makeAndUploadShort(segment, video_idea, subidea, assetspath, speed_multiplie
     temp_captioned_filename = f"temp_captions_{segment_id}.mp4"
     temp_captioned_path = os.path.join("cache", "shorts", temp_captioned_filename)
     
-    captioned_video = add_tiktok_captions(combined_video, temp_captioned_path)
+    captioned_video = add_tiktok_captions(combined_video, temp_captioned_path, font_path=os.path.join(assetspath, "font.ttf"))
     print(f"Added captions to video: {captioned_video}")
     
     # Step 5: Speed up the final video

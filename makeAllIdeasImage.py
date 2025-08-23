@@ -65,11 +65,19 @@ def _wrap_text_to_width(draw: ImageDraw.ImageDraw,
                         text: str,
                         font: ImageFont.FreeTypeFont,
                         max_width: int,
-                        max_lines: int = 3) -> Tuple[List[str], int, int]:
-    """Greedy wrap text into lines that fit max_width. Returns (lines, block_w, block_h).
+                        max_lines: int = 3,
+                        measure_full: bool = False) -> Tuple[List[str], int, int]:
+    """Greedy wrap text into lines that fit max_width without breaking single words.
+    Returns (lines, block_w, block_h).
 
-    - Splits on spaces; if a single token is too wide, it is hard-wrapped by characters.
-    - Up to max_lines lines are produced; callers should shrink font if more would be needed.
+    Behavior:
+      - Splits on spaces only; single words are NEVER broken by characters.
+      - If a word exceeds max_width at the current font size, it is placed on its
+        own line and the returned block_w will exceed max_width. Callers that size
+        fonts (e.g., _find_uniform_font_size / _fit_wrapped_text) should detect
+        this and shrink the font until it fits.
+      - If measure_full=True, the function will NOT truncate to max_lines; it will
+        return all the lines needed so the caller can decide to shrink the font.
     """
     if not text:
         return [""], 0, 0
@@ -85,35 +93,20 @@ def _wrap_text_to_width(draw: ImageDraw.ImageDraw,
     i = 0
     while i < len(words):
         word = words[i]
-        # If a single word is wider than the box, hard-wrap it by characters
         w_word, _ = text_size(word)
-        if w_word > max_width and len(word) > 1:
-            # Flush current line first
+        # If a single word is wider than the box, DO NOT split it.
+        # Place as its own line and let sizing logic shrink the font.
+        if w_word > max_width:
             if current:
                 lines.append(current)
                 current = ""
-                if len(lines) >= max_lines:
+                if not measure_full and len(lines) >= max_lines:
                     break
-            # Hard-wrap this long token
-            start = 0
-            while start < len(word):
-                # Fit as many characters as possible on this line
-                end = start + 1
-                last_good = start + 1
-                while end <= len(word):
-                    segment = word[start:end]
-                    seg_w, _ = text_size(segment)
-                    if seg_w <= max_width:
-                        last_good = end
-                        end += 1
-                    else:
-                        break
-                segment = word[start:last_good]
-                lines.append(segment)
-                start = last_good
-                if len(lines) >= max_lines:
-                    break
+            lines.append(word)
             i += 1
+            if not measure_full and len(lines) >= max_lines:
+                # stop early for drawing; measuring callers will collect all lines
+                pass
             continue
 
         # Try to place word on current line
@@ -124,14 +117,10 @@ def _wrap_text_to_width(draw: ImageDraw.ImageDraw,
         else:
             lines.append(current or word)
             current = "" if current else ""
-            if not current:
-                # If we placed the word as its own line, move to next
-                if trial == word:
-                    i += 1
-            if len(lines) >= max_lines:
+            if not measure_full and len(lines) >= max_lines:
                 break
 
-    if current and len(lines) < max_lines:
+    if current and (measure_full or len(lines) < max_lines):
         lines.append(current)
 
     # Measure block size
@@ -159,14 +148,23 @@ def _fit_wrapped_text(draw: ImageDraw.ImageDraw,
     size = min(start_px, MAX_FONT_SIZE)
     while size > 8:
         font = _load_font("", size, font_path)
-        lines, block_w, block_h = _wrap_text_to_width(draw, text, font, max_width, max_lines=max_lines)
+        # Measure without truncation to see if more than max_lines would be needed.
+        lines_full, block_w, block_h = _wrap_text_to_width(
+            draw, text, font, max_width, max_lines=max_lines, measure_full=True
+        )
         line_h = draw.textbbox((0, 0), "Ag", font=font)[3]
-        if block_w <= max_width and block_h <= max_height and len(lines) <= max_lines:
-            return font, lines, block_w, block_h, line_h
+        if block_w <= max_width and block_h <= max_height and len(lines_full) <= max_lines:
+            # Now get the display lines (respecting max_lines) for drawing.
+            lines_draw, block_w_draw, block_h_draw = _wrap_text_to_width(
+                draw, text, font, max_width, max_lines=max_lines, measure_full=False
+            )
+            return font, lines_draw, block_w_draw, block_h_draw, line_h
         size -= 1
     # Fallback tiny font
     font = _load_font("", 8, font_path)
-    lines, block_w, block_h = _wrap_text_to_width(draw, text, font, max_width, max_lines=max_lines)
+    lines, block_w, block_h = _wrap_text_to_width(
+        draw, text, font, max_width, max_lines=max_lines, measure_full=False
+    )
     line_h = draw.textbbox((0, 0), "Ag", font=font)[3]
     return font, lines, block_w, block_h, line_h
 
@@ -186,8 +184,11 @@ def _find_uniform_font_size(draw: ImageDraw.ImageDraw,
         font = _load_font("", size, font_path)
         ok = True
         for label in labels:
-            lines, block_w, block_h = _wrap_text_to_width(draw, label, font, max_width, max_lines)
-            if block_w > max_width or block_h > max_height or len(lines) > max_lines:
+            # Measure without truncation so we know if >max_lines would be needed.
+            lines_full, block_w, block_h = _wrap_text_to_width(
+                draw, label, font, max_width, max_lines, measure_full=True
+            )
+            if block_w > max_width or block_h > max_height or len(lines_full) > max_lines:
                 ok = False
                 break
         if ok:
@@ -634,15 +635,15 @@ if __name__ == "__main__":
         {'subject': 'DEFCON 4', 'image': r'images\DEFCON+4+military+intelligence+gathering+operations+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\8.jpg'},
         {'subject': 'DEFCON 3', 'image': r'images\DEFCON+3+military+heightened+readiness+alert+state+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\9.jpg'},
         {'subject': 'DEFCON 2', 'image': r'images\DEFCON+2+military+urgent+readiness+preparation+imminent+threat+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\5.jpg'},
-        {'subject': 'DEFCON 1', 'image': r'images\DEFCON+1+military+maximum+readiness+active+combat+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\9.jpg'},
-    {'subject': 'DEFCON 9', 'image': r'images\DEFCON+5+military+normal+operations+photo+peacetime+-logo+-meme+-clipart+-infographic+-diagram+-text\5.jpg'},
-        {'subject': 'DEFCON 4', 'image': r'images\DEFCON+4+military+intelligence+gathering+operations+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\8.jpg'},
-        {'subject': 'DEFCON 3', 'image': r'images\DEFCON+3+military+heightened+readiness+alert+state+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\9.jpg'},
-        {'subject': 'DEFCON 2', 'image': r'images\DEFCON+2+military+urgent+readiness+preparation+imminent+threat+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\5.jpg'},
-        {'subject': 'DEFCON 1', 'image': r'images\DEFCON+1+military+maximum+readiness+active+combat+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\9.jpg'},
+        {'subject': 'yababbbabababa', 'image': r'images\DEFCON+1+military+maximum+readiness+active+combat+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\9.jpg'},
+    # {'subject': 'DEFCON 9', 'image': r'images\DEFCON+5+military+normal+operations+photo+peacetime+-logo+-meme+-clipart+-infographic+-diagram+-text\5.jpg'},
+    #     {'subject': 'DEFCON 4', 'image': r'images\DEFCON+4+military+intelligence+gathering+operations+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\8.jpg'},
+    #     {'subject': 'DEFCON 3', 'image': r'images\DEFCON+3+military+heightened+readiness+alert+state+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\9.jpg'},
+    #     {'subject': 'DEFCON 2', 'image': r'images\DEFCON+2+military+urgent+readiness+preparation+imminent+threat+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\5.jpg'},
+    #     {'subject': 'DEFCON 1', 'image': r'images\DEFCON+1+military+maximum+readiness+active+combat+photo+-logo+-meme+-clipart+-infographic+-diagram+-text\9.jpg'},
     
     ]
-    # makeAllIdeasImage(sample, output_path="all_ideas.png", size=(1920, 1080), background_path="background.png")
+    makeAllIdeasImage(sample, output_path="all_ideas.png", size=(1920, 1080), background_path="profiles/naturelist/background.png",font_path="profiles/naturelist/font.ttf")
     
     # Example: Create zoom video for DEFCON 1 (index 4)
-    zoomintoidea(sample, 5, "defcon1_zoom.mp4", size=(1920, 1080), background_path="background.png", font_path="font.ttf")
+    # zoomintoidea(sample, 5, "defcon1_zoom.mp4", size=(1920, 1080), background_path="background.png", font_path="font.ttf")
