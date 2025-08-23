@@ -135,11 +135,25 @@ def getImage(searchQuery: str, description: str) -> str:
                     remove_file = True
                 elif imghdr.what(p) is None:
                     remove_file = True
+                else:
+                    # Additional validation: try to actually load the image data
+                    try:
+                        from PIL import Image
+                        with Image.open(p) as img:
+                            # Try to load the image data completely to catch corruption
+                            img.load()
+                            # Verify image has reasonable dimensions
+                            if img.width < 10 or img.height < 10:
+                                remove_file = True
+                    except Exception as img_error:
+                        print(f"Image validation failed for {p}: {img_error}")
+                        remove_file = True
 
                 if remove_file:
                     # Delete corrupted/invalid file so it doesn't linger on disk
                     try:
                         os.remove(p)
+                        print(f"Removed corrupted/invalid image: {p}")
                     except OSError:
                         pass  # Ignore inability to delete
                     continue  # Skip to next path
@@ -193,8 +207,29 @@ def getImage(searchQuery: str, description: str) -> str:
     # 1b. Filter out any corrupted / invalid images before sending to Gemini
     image_paths = _filter_valid_images(image_paths)
 
+    # 1c. If no valid images, try downloading again with different search terms
     if not image_paths:
-        raise RuntimeError("No valid images were downloaded for the given search query.")
+        print(f"No valid images found for '{searchQuery}', retrying with modified search...")
+        # Try a few fallback searches
+        fallback_searches = [
+            f"{searchQuery} high quality",
+            f"{searchQuery} stock photo", 
+            searchQuery.split()[0] if ' ' in searchQuery else f"{searchQuery} image"
+        ]
+        
+        for fallback_query in fallback_searches:
+            try:
+                print(f"Trying fallback search: '{fallback_query}'")
+                image_paths = _download_images(fallback_query)
+                image_paths = _filter_valid_images(image_paths)
+                if image_paths:
+                    break
+            except Exception as e:
+                print(f"Fallback search failed for '{fallback_query}': {e}")
+                continue
+    
+    if not image_paths:
+        raise RuntimeError(f"No valid images were downloaded for '{searchQuery}' or any fallback searches.")
 
     # 2. Build the prompt
     prompt = gemini_prompt.format(description=description)

@@ -1308,7 +1308,19 @@ def buildShot(media_plan: List[Dict[str, Any]], duration: float, font_path: str 
         appear_at = float(it.get("appearAt", 0) or 0)
         is_image = "path" in it and it.get("path")
         if is_image:
-            clip = ImageClip(it["path"])
+            try:
+                clip = ImageClip(it["path"])
+            except Exception as e:
+                print(f"Error loading image {it['path']}: {e}")
+                # Try to delete the corrupted file and skip this item
+                try:
+                    import os
+                    if os.path.exists(it["path"]):
+                        os.remove(it["path"])
+                        print(f"Deleted corrupted image: {it['path']}")
+                except:
+                    pass
+                continue  # Skip this corrupted image
         else:
             clip = TextClip(
                 text=str(it.get("text", "")),
