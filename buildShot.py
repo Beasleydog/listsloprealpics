@@ -1314,7 +1314,6 @@ def buildShot(media_plan: List[Dict[str, Any]], duration: float, font_path: str 
                 print(f"Error loading image {it['path']}: {e}")
                 # Try to delete the corrupted file and skip this item
                 try:
-                    import os
                     if os.path.exists(it["path"]):
                         os.remove(it["path"])
                         print(f"Deleted corrupted image: {it['path']}")
