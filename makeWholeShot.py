@@ -28,36 +28,30 @@ VO_PLAN="""Write a one minute long VO script for the following concept in the co
 Concept: {concept}
 Larger Video: {larger_video}
 
-Output just a single standalone paragraph, don't use continueing language like "next up".
+Output just a single standalone paragraph, don't use continuing language like "next up".
 Explain plainly without overly verbose word choice, but make it interesting. Use examples to help the viewer understand.
 This will just be a subsection of the larger video, so don't explain the larger video idea but rather explain JUST the concept.
 
 NEVER EVER START A SENTENCE WITH A ACRONYM"""
 
-MAKE_MEDIA="""Break this script down into shots and build the media for each shot.
-You should return an array of shot objects.
-Shot objects should be the following:
-{{
-vo:"the EXACT portion of the full vo that should be aligned with this shot",
-media:[
-an array of media objects
-]
-}}
-Use media objects to represent all the key concepts in each shot.
-Media objects can either be text or images.
-Text objects should be the following
-{{
-text:"just the text",
-appearAt:"the EXACT text from the shot's VO that should trigger the text to show"
-}}
-Image objects should be the following
-{{
-imageSearch"a search that could be put into google images to find the desired images",
-goal:"the goal of the image, what it should convey (to help the editor search and pick the best image)",
-caption:"an optional param, a text snippet that will be directly below the image",
-appearAt:"the EXACT text from the shot's VO that should trigger the image to show"
-}}
-Never use graphs or charts for an image.
+MAKE_MEDIA="""Break the VO into an array of shot objects. Output JSON ONLY (no prose, no markdown): an array of shots.
+
+Each shot object MUST be:
+{
+  "vo": "the EXACT portion of the full VO aligned with this shot",
+  "media": [ media objects ]
+}
+
+Media object types:
+- Text:
+  { "text": "just the text", "appearAt": "EXACT substring from the shot's VO that triggers the text" }
+- Image:
+  { "imageSearch": "query for Google Images", "goal": "what the image should convey", "appearAt": "EXACT substring from the shot's VO", "caption": "optional" }
+
+Rules:
+- Every media object MUST include a non-empty "appearAt".
+- Do NOT include graphs or charts.
+- Return compact, valid JSON array ONLY.
 
 Full VO to be broken down into shots:
 {vo}"""
@@ -84,6 +78,51 @@ def parse_json_response(response):
     # If no JSON found, raise an error
     raise ValueError(f"Could not parse JSON from response: {response}")
 
+def _is_non_empty_string(value):
+    return isinstance(value, str) and value.strip() != ""
+
+def _validate_media_item(item):
+    if not isinstance(item, dict):
+        return False
+    if "text" in item:
+        return _is_non_empty_string(item.get("text")) and _is_non_empty_string(item.get("appearAt"))
+    return (
+        _is_non_empty_string(item.get("imageSearch"))
+        and _is_non_empty_string(item.get("goal"))
+        and _is_non_empty_string(item.get("appearAt"))
+    )
+
+def validate_media_plan(media_plan):
+    if not isinstance(media_plan, list) or not media_plan:
+        return False
+    for shot in media_plan:
+        if not isinstance(shot, dict):
+            return False
+        if not _is_non_empty_string(shot.get("vo")):
+            return False
+        media = shot.get("media")
+        if not isinstance(media, list):
+            return False
+        for m in media:
+            if not _validate_media_item(m):
+                return False
+    return True
+
+def get_valid_media_plan(vo_script, max_attempts: int = 3):
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            prompt = MAKE_MEDIA.format(vo=vo_script)
+            response = ask_gemini(prompt, model="gemini-2.5-pro")
+            plan = parse_json_response(response)
+            if validate_media_plan(plan):
+                return plan
+            print(f"Media plan validation failed on attempt {attempt}—retrying...")
+        except Exception as e:
+            last_error = e
+            print(f"Error getting media plan on attempt {attempt}: {e}")
+    raise ValueError(f"Failed to obtain a valid media plan after {max_attempts} attempts: {last_error}")
+
 def makeWholeShot(concept, larger_video, assetspath: str = "."):
     concept = concept.strip()
     larger_video = larger_video.strip()
@@ -100,9 +139,7 @@ def makeWholeShot(concept, larger_video, assetspath: str = "."):
     vo_plan = VO_PLAN.format(concept=concept, larger_video=larger_video)
     vo_script = ask_gemini(vo_plan,model="gemini-2.5-pro")
     
-    make_media = MAKE_MEDIA.format(vo=vo_script)
-    make_media_response = ask_gemini(make_media,model="gemini-2.5-pro")
-    media_plan = parse_json_response(make_media_response)
+    media_plan = get_valid_media_plan(vo_script, max_attempts=3)
 
     
     # Pre-cache all images up front and in parallel so later calls are fast

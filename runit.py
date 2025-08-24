@@ -45,30 +45,60 @@ def runit(assetspath):
                     print(f"Failed to send Discord notification: {e}")
 
     def update_default_title():
+        """Return the next idea title without mutating any files."""
         next_ideas_file = os.path.join(assetspath, "next_ideas.txt")
-        done_ideas_file = os.path.join(assetspath, "done_ideas.txt")
         
         if os.path.exists(next_ideas_file):
             with open(next_ideas_file, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            if lines:
-                # Get first line and strip whitespace
-                first_line = lines[0].strip()
-                
-                # Write remaining lines back to next_ideas.txt
-                with open(next_ideas_file, 'w', encoding='utf-8') as f:
-                    f.writelines(lines[1:])
-                
-                # Append first line to done_ideas.txt
-                with open(done_ideas_file, 'a', encoding='utf-8') as f:
-                    f.write(first_line + '\n')
-                
-                return first_line
-            else:
-                raise Exception("No ideas available in next_ideas.txt")
+                for raw_line in f:
+                    line = raw_line.strip()
+                    if line:
+                        return line
+            raise Exception("No ideas available in next_ideas.txt")
         else:
             raise Exception("next_ideas.txt file not found")
+
+    def finalize_idea_consumption(idea: str):
+        """
+        Move the consumed idea from next_ideas.txt to done_ideas.txt.
+        This is called only after a successful long-form upload.
+        """
+        next_ideas_file = os.path.join(assetspath, "next_ideas.txt")
+        done_ideas_file = os.path.join(assetspath, "done_ideas.txt")
+
+        if not os.path.exists(next_ideas_file):
+            print("next_ideas.txt file not found; cannot finalize idea consumption.")
+            return
+
+        with open(next_ideas_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # Find first non-empty line
+        first_idx = None
+        first_non_empty_value = None
+        for idx, raw in enumerate(lines):
+            stripped = raw.strip()
+            if stripped:
+                first_idx = idx
+                first_non_empty_value = stripped
+                break
+
+        if first_idx is None:
+            print("next_ideas.txt has no ideas; nothing to finalize.")
+            return
+
+        if first_non_empty_value != idea:
+            print("Top idea in next_ideas.txt changed; not moving to done to avoid mismatch.")
+            return
+
+        # Remove the first non-empty line and write back
+        new_lines = lines[:first_idx] + lines[first_idx + 1:]
+        with open(next_ideas_file, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+
+        # Append to done_ideas.txt
+        with open(done_ideas_file, 'a', encoding='utf-8') as f:
+            f.write(idea + '\n')
 
     video_idea = update_default_title()
     check_ideas_and_notify()
@@ -140,6 +170,11 @@ def runit(assetspath):
             keywords=keywords_csv
         )
         print(f"Uploaded: {watch_url}")
+        # Only now that long-form upload succeeded do we move the idea
+        try:
+            finalize_idea_consumption(video_idea)
+        except Exception as finalize_err:
+            print(f"Failed to finalize idea consumption: {finalize_err}")
     except Exception as e:
         print(f"Upload failed: {e}")
 
