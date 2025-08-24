@@ -175,7 +175,11 @@ def get_valid_media_plan(vo_script, max_attempts: int = 3):
     last_error = None
     for attempt in range(1, max_attempts + 1):
         try:
+            # Vary prompt slightly on retries to bypass cache
             prompt = MAKE_MEDIA.format(vo=vo_script)
+            if attempt > 1:
+                prompt += f"\n\n# Retry attempt {attempt}: Ensure all media objects have non-empty appearAt fields."
+            
             response = ask_gemini(prompt, model="gemini-2.5-pro")
             plan = parse_json_response(response)
             if validate_media_plan(plan):
