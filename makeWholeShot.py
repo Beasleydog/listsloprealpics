@@ -174,38 +174,26 @@ def validate_media_plan(media_plan):
 def get_valid_media_plan(vo_script, max_attempts: int = 3):
     last_error = None
     for attempt in range(1, max_attempts + 1):
-        try:
-            # Vary prompt slightly on retries to bypass cache
-            print(f"vo_script for attempt {attempt}: {repr(vo_script[:200])}")
-            prompt = MAKE_MEDIA.format(vo=vo_script)
-            if attempt > 1:
-                prompt += f"\n\n# Retry attempt {attempt}: Ensure all media objects have non-empty appearAt fields."
-            
-            print(f"Sending prompt attempt {attempt}:")
-            print(prompt[:500] + "..." if len(prompt) > 500 else prompt)
-            print("-" * 50)
-            
-            response = ask_gemini(prompt, model="gemini-2.5-pro")
-            print(f"Raw response attempt {attempt}:")
-            print(repr(response))
-            print("=" * 50)
-            
-            try:
-                plan = parse_json_response(response)
-            except ValueError as parse_error:
-                print(f"JSON parsing failed: {parse_error}")
-                print(f"Full response length: {len(response)}")
-                print(f"Response starts with: {repr(response[:100])}")
-                print(f"Response ends with: {repr(response[-100:])}")
-                raise
-            if validate_media_plan(plan):
-                return plan
-            print(f"Media plan validation failed on attempt {attempt}—retrying...")
-        except Exception as e:
-            last_error = e
-            print(f"Error getting media plan on attempt {attempt}: {e}")
-    raise ValueError(f"Failed to obtain a valid media plan after {max_attempts} attempts: {last_error}")
-
+        # Vary prompt slightly on retries to bypass cache
+        print(f"vo_script for attempt {attempt}: {repr(vo_script[:200])}")
+        prompt = MAKE_MEDIA.format(vo=vo_script)
+        if attempt > 1:
+            prompt += f"\n\n# Retry attempt {attempt}: Ensure all media objects have non-empty appearAt fields."
+        
+        print(f"Sending prompt attempt {attempt}:")
+        print(prompt[:500] + "..." if len(prompt) > 500 else prompt)
+        print("-" * 50)
+        
+        response = ask_gemini(prompt, model="gemini-2.5-pro")
+        print(f"Raw response attempt {attempt}:")
+        print(repr(response))
+        print("=" * 50)
+        
+        plan = parse_json_response(response)
+        if validate_media_plan(plan):
+            return plan
+        print(f"Media plan validation failed on attempt {attempt}—retrying...")
+    # raise ValueError(f"Failed to obtain a valid media plan after {max_attempts} attempts")
 def makeWholeShot(concept, larger_video, assetspath: str = "."):
     concept = concept.strip()
     larger_video = larger_video.strip()
