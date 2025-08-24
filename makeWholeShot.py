@@ -181,6 +181,7 @@ def get_valid_media_plan(vo_script, max_attempts: int = 3):
                 prompt += f"\n\n# Retry attempt {attempt}: Ensure all media objects have non-empty appearAt fields."
             
             response = ask_gemini(prompt, model="gemini-2.5-pro")
+            print(response)
             plan = parse_json_response(response)
             if validate_media_plan(plan):
                 return plan
