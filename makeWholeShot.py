@@ -189,7 +189,15 @@ def get_valid_media_plan(vo_script, max_attempts: int = 3):
             print(f"Raw response attempt {attempt}:")
             print(repr(response))
             print("=" * 50)
-            plan = parse_json_response(response)
+            
+            try:
+                plan = parse_json_response(response)
+            except ValueError as parse_error:
+                print(f"JSON parsing failed: {parse_error}")
+                print(f"Full response length: {len(response)}")
+                print(f"Response starts with: {repr(response[:100])}")
+                print(f"Response ends with: {repr(response[-100:])}")
+                raise
             if validate_media_plan(plan):
                 return plan
             print(f"Media plan validation failed on attempt {attempt}—retrying...")
