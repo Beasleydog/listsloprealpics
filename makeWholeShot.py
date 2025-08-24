@@ -59,24 +59,87 @@ Full VO to be broken down into shots:
 
 # Parse the response flexibly - look for JSON in markdown blocks or plain text
 def parse_json_response(response):
-    # First try to find JSON in markdown code blocks
-    json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response, re.DOTALL)
-    if json_match:
+    # 1) Try direct parse
+    try:
+        obj = json.loads(response)
+        normalized = _normalize_media_plan_container(obj)
+        if normalized is not None:
+            return normalized
+    except Exception:
+        pass
+
+    # 2) Try code-fenced blocks (prefer the largest)
+    blocks = re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", response)
+    if blocks:
+        blocks.sort(key=len, reverse=True)
+        for blk in blocks:
+            try:
+                obj = json.loads(blk)
+                normalized = _normalize_media_plan_container(obj)
+                if normalized is not None:
+                    return normalized
+            except Exception:
+                continue
+
+    # 3) Extract top-level JSON arrays by bracket-depth scanning
+    for candidate in _extract_json_arrays(response):
         try:
-            return json.loads(json_match.group(1))
-        except json.JSONDecodeError:
-            pass
-    
-    # Try to find JSON array in the response without markdown
-    json_match = re.search(r'(\[.*?\])', response, re.DOTALL)
-    if json_match:
-        try:
-            return json.loads(json_match.group(1))
-        except json.JSONDecodeError:
-            pass
-    
-    # If no JSON found, raise an error
-    raise ValueError(f"Could not parse JSON from response: {response}")
+            obj = json.loads(candidate)
+            normalized = _normalize_media_plan_container(obj)
+            if normalized is not None:
+                return normalized
+        except Exception:
+            continue
+
+    # If no JSON found, raise an error with trimmed preview
+    preview = response[:2000]
+    raise ValueError(f"Could not parse JSON from response (preview): {preview}")
+
+def _normalize_media_plan_container(obj):
+    # If already a list, accept
+    if isinstance(obj, list):
+        return obj
+    # If dict with a shots-like array, extract
+    if isinstance(obj, dict):
+        for key in ("shots", "data", "result", "plan", "media_plan"):
+            val = obj.get(key)
+            if isinstance(val, list):
+                return val
+        # Single-shot dict fallback
+        if _is_non_empty_string(obj.get("vo")) and isinstance(obj.get("media"), list):
+            return [obj]
+    return None
+
+def _extract_json_arrays(text: str):
+    arrays = []
+    depth = 0
+    start = -1
+    in_str = False
+    esc = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        else:
+            if ch == '"':
+                in_str = True
+                continue
+            if ch == '[':
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif ch == ']':
+                if depth > 0:
+                    depth -= 1
+                    if depth == 0 and start != -1:
+                        arrays.append(text[start:i+1])
+                        start = -1
+    return arrays
 
 def _is_non_empty_string(value):
     return isinstance(value, str) and value.strip() != ""
