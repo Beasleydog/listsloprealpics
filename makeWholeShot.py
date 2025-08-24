@@ -37,16 +37,16 @@ NEVER EVER START A SENTENCE WITH A ACRONYM"""
 MAKE_MEDIA="""Break the VO into an array of shot objects. Output JSON ONLY (no prose, no markdown): an array of shots.
 
 Each shot object MUST be:
-{
+{{
   "vo": "the EXACT portion of the full VO aligned with this shot",
   "media": [ media objects ]
-}
+}}
 
 Media object types:
 - Text:
-  { "text": "just the text", "appearAt": "EXACT substring from the shot's VO that triggers the text" }
+  {{ "text": "just the text", "appearAt": "EXACT substring from the shot's VO that triggers the text" }}
 - Image:
-  { "imageSearch": "query for Google Images", "goal": "what the image should convey", "appearAt": "EXACT substring from the shot's VO", "caption": "optional" }
+  {{ "imageSearch": "query for Google Images", "goal": "what the image should convey", "appearAt": "EXACT substring from the shot's VO", "caption": "optional" }}
 
 Rules:
 - Every media object MUST include a non-empty "appearAt".
